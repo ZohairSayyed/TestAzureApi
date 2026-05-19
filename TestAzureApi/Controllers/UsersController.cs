@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace TestAzureApi.Controllers
 {
-    [Route("api/[controller]")]
+    [Route("[controller]")]
     [ApiController]
     public class UsersController : ControllerBase
     {

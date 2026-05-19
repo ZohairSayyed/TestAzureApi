@@ -1,4 +1,6 @@
 
+using Azure.Identity;
+
 namespace TestAzureApi
 {
     public class Program
@@ -7,6 +9,15 @@ namespace TestAzureApi
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            if (!builder.Environment.IsDevelopment())
+            {
+                var keyVaultUrl = builder.Configuration["KeyVaultUrl"];
+
+                builder.Configuration.AddAzureKeyVault(
+                    new Uri(keyVaultUrl!),
+                    new DefaultAzureCredential()
+                );
+            }
             // Add services to the container.
 
             builder.Services.AddControllers();
