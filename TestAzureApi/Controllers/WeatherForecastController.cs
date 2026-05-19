@@ -22,7 +22,7 @@ namespace TestAzureApi.Controllers
         public IEnumerable<WeatherForecast> Get()
         {
             _logger.LogInformation("Getting weather forecast data.");
-            _logger.LogInformation("Generating random weather data for the next 5 days.");
+            _logger.LogDebug("Generating random weather data for the next 5 days.");
             return Enumerable.Range(1, 5).Select(index => new WeatherForecast
             {
                 Date = DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
