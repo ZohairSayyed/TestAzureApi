@@ -21,6 +21,8 @@ namespace TestAzureApi.Controllers
         [HttpGet(Name = "GetWeatherForecast")]
         public IEnumerable<WeatherForecast> Get()
         {
+            _logger.LogInformation("Getting weather forecast data.");
+            _logger.LogDebug("Generating random weather data for the next 5 days.");
             return Enumerable.Range(1, 5).Select(index => new WeatherForecast
             {
                 Date = DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
