@@ -4,15 +4,17 @@ on:
   push:
     branches:
       - iis-deploy
+
   workflow_dispatch:
 
 jobs:
 
   # ════════════════════════════════════════════
-  # JOB 1 — BUILD (identical to App Service pipeline)
+  # JOB 1 — BUILD
   # ════════════════════════════════════════════
   build:
     runs-on: windows-latest
+
     permissions:
       contents: read
 
@@ -20,26 +22,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up .NET 8
+      - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.x'
 
-      - name: Build
-        run: dotnet build --configuration Release
+      - name: Restore dependencies
+        run: dotnet restore
 
-      - name: Publish
-        run: dotnet publish -c Release -o ./publish
+      - name: Build application
+        run: dotnet build --configuration Release --no-restore
 
-      - name: Upload artifact
+      - name: Publish application
+        run: dotnet publish --configuration Release --output ./publish --no-build
+
+      - name: Upload publish artifacts
         uses: actions/upload-artifact@v4
         with:
           name: iis-app
           path: ./publish
 
   # ════════════════════════════════════════════
-  # JOB 2 — DEPLOY
-  # Uses PowerShell remoting (works on windows-latest)
+  # JOB 2 — DEPLOY TO IIS
   # ════════════════════════════════════════════
   deploy:
     runs-on: windows-latest
@@ -47,87 +51,179 @@ jobs:
 
     steps:
 
-      # Step 1 — Download artifact from build job
-      - name: Download artifact
+      - name: Download publish artifact
         uses: actions/download-artifact@v4
         with:
           name: iis-app
           path: ./publish
 
-      # Step 2 — Backup + Stop + Deploy + Start via PowerShell remoting
-      - name: Deploy to IIS on VM
+      - name: Deploy to IIS on Azure VM
         shell: powershell
         env:
           VM_HOST: ${{ secrets.VM_HOST }}
           VM_USERNAME: ${{ secrets.VM_USERNAME }}
           VM_PASSWORD: ${{ secrets.VM_PASSWORD }}
+
         run: |
-          # ── Setup secure password and credentials ──
+
+          Write-Host "Starting deployment..."
+
+          # ─────────────────────────────────────
+          # TLS 1.2
+          # ─────────────────────────────────────
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+          # ─────────────────────────────────────
+          # Secure credentials
+          # ─────────────────────────────────────
           $password = ConvertTo-SecureString $env:VM_PASSWORD -AsPlainText -Force
-          $credential = New-Object System.Management.Automation.PSCredential($env:VM_USERNAME, $password)
 
-          # ── Create PS Session to VM ──
-          $sessionOption = New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck
-          $session = New-PSSession -ComputerName $env:VM_HOST `
-                                   -Credential $credential `
-                                   -UseSSL:$false `
-                                   -SessionOption $sessionOption `
-                                   -Authentication Basic
+          $credential = New-Object System.Management.Automation.PSCredential(
+            $env:VM_USERNAME,
+            $password
+          )
 
-          # ── Step A: Backup current deployment ──
+          # ─────────────────────────────────────
+          # Create remote PowerShell session
+          # ─────────────────────────────────────
+          $sessionOption = New-PSSessionOption `
+            -SkipCACheck `
+            -SkipCNCheck `
+            -SkipRevocationCheck
+
+          $session = New-PSSession `
+            -ComputerName $env:VM_HOST `
+            -Credential $credential `
+            -UseSSL `
+            -Port 5986 `
+            -Authentication Basic `
+            -SessionOption $sessionOption
+
+          Write-Host "Connected to VM successfully"
+
+          # ─────────────────────────────────────
+          # Create folders if not exists
+          # ─────────────────────────────────────
           Invoke-Command -Session $session -ScriptBlock {
+
+            if (-not (Test-Path "C:\inetpub\AzureTestApi")) {
+              New-Item `
+                -ItemType Directory `
+                -Path "C:\inetpub\AzureTestApi" `
+                -Force
+            }
+
+            if (-not (Test-Path "C:\inetpub\backups")) {
+              New-Item `
+                -ItemType Directory `
+                -Path "C:\inetpub\backups" `
+                -Force
+            }
+          }
+
+          # ─────────────────────────────────────
+          # Backup existing deployment
+          # ─────────────────────────────────────
+          Invoke-Command -Session $session -ScriptBlock {
+
             $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+
             $backupPath = "C:\inetpub\backups\$timestamp"
 
-            # Create backups folder if not exists
-            if (-not (Test-Path "C:\inetpub\backups")) {
-              New-Item -ItemType Directory -Path "C:\inetpub\backups"
-              Write-Host "Created backups folder"
-            }
-
-            # Copy current deployment to backup
             if (Test-Path "C:\inetpub\AzureTestApi") {
-              Copy-Item -Path "C:\inetpub\AzureTestApi" `
-                        -Destination $backupPath `
-                        -Recurse -Force
-              Write-Host "Backup created at: $backupPath"
-            } else {
-              Write-Host "No existing deployment - skipping backup"
+
+              Copy-Item `
+                -Path "C:\inetpub\AzureTestApi\*" `
+                -Destination $backupPath `
+                -Recurse `
+                -Force `
+                -ErrorAction SilentlyContinue
+
+              Write-Host "Backup created: $backupPath"
             }
           }
 
-          # ── Step B: Stop IIS site ──
+          # ─────────────────────────────────────
+          # Stop IIS website
+          # ─────────────────────────────────────
           Invoke-Command -Session $session -ScriptBlock {
-            & "$env:windir\system32\inetsrv\appcmd" stop site /site.name:"AzureTestApi"
-            Write-Host "IIS site stopped"
+
+            Import-Module WebAdministration
+
+            if ((Get-Website "AzureTestApi").State -eq "Started") {
+
+              Stop-Website -Name "AzureTestApi"
+
+              Write-Host "IIS site stopped"
+            }
           }
 
-          # ── Step C: Copy new files to VM ──
-          Write-Host "Copying new files to VM..."
-          Copy-Item -Path "./publish/*" `
-                    -Destination "C:\inetpub\AzureTestApi" `
-                    -ToSession $session `
-                    -Recurse -Force
+          # ─────────────────────────────────────
+          # Remove old deployment files
+          # ─────────────────────────────────────
+          Invoke-Command -Session $session -ScriptBlock {
+
+            Remove-Item `
+              -Path "C:\inetpub\AzureTestApi\*" `
+              -Recurse `
+              -Force `
+              -ErrorAction SilentlyContinue
+          }
+
+          # ─────────────────────────────────────
+          # Copy new files
+          # ─────────────────────────────────────
+          Write-Host "Copying files to VM..."
+
+          Copy-Item `
+            -Path "./publish/*" `
+            -Destination "C:\inetpub\AzureTestApi" `
+            -ToSession $session `
+            -Recurse `
+            -Force
+
           Write-Host "Files copied successfully"
 
-          # ── Step D: Start IIS site ──
+          # ─────────────────────────────────────
+          # Start IIS website
+          # ─────────────────────────────────────
           Invoke-Command -Session $session -ScriptBlock {
-            & "$env:windir\system32\inetsrv\appcmd" start site /site.name:"AzureTestApi"
+
+            Import-Module WebAdministration
+
+            Start-Website -Name "AzureTestApi"
+
             Write-Host "IIS site started"
           }
 
-          # ── Step E: Verify deployment ──
+          # ─────────────────────────────────────
+          # Health check
+          # ─────────────────────────────────────
           Invoke-Command -Session $session -ScriptBlock {
+
             Start-Sleep -Seconds 10
+
             try {
-              $response = Invoke-WebRequest -Uri "http://localhost:8080/health" -UseBasicParsing
-              Write-Host "Health check passed: $($response.StatusCode)"
-            } catch {
-              Write-Host "Health check failed: $_"
+
+              $response = Invoke-WebRequest `
+                -Uri "http://localhost:8080/health" `
+                -UseBasicParsing
+
+              Write-Host "Health check successful"
+              Write-Host "Status Code: $($response.StatusCode)"
+            }
+            catch {
+
+              Write-Host "Health check failed"
+              Write-Host $_
+
               exit 1
             }
           }
 
-          # ── Cleanup session ──
+          # ─────────────────────────────────────
+          # Cleanup
+          # ─────────────────────────────────────
           Remove-PSSession $session
-          Write-Host "Deployment complete!"
+
+          Write-Host "Deployment completed successfully!"
