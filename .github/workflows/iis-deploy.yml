@@ -57,14 +57,14 @@ jobs:
           name: iis-app           # Name of the package
           path: ./publish         # Folder to upload
 
-  # ════════════════════════════════════════════
+# ════════════════════════════════════════════
   # JOB 2 — DEPLOY
   # Backs up current version, then deploys new version
   # Only runs if build job succeeded
   # ════════════════════════════════════════════
   deploy:
-    runs-on: ubuntu-latest
-    needs: build                  # Wait for build to succeed first
+    runs-on: ubuntu-latest        # Linux middleman runner
+    needs: build                  
 
     steps:
 
@@ -76,45 +76,25 @@ jobs:
           path: ./publish
 
       # Step 2 — Connect to VM and take backup of current version
-      # Before touching anything — save what's currently running
       - name: Backup current deployment
         uses: appleboy/ssh-action@v0.1.5
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USERNAME }}
           password: ${{ secrets.VM_PASSWORD }}
-          protocol: cmd           # Use Windows CMD not bash
           script: |
-            REM Create backups folder if it doesn't exist
-            if not exist "C:\inetpub\backups" mkdir "C:\inetpub\backups"
-
-            REM Create timestamped backup folder
-            REM Example: C:\inetpub\backups\2024-01-15_10-30-00
-            for /f "tokens=1-6 delims=:-. " %%a in ("%DATE% %TIME%") do (
-              set BACKUP_DIR=C:\inetpub\backups\%%c-%%b-%%a_%%d-%%e-%%f
-            )
-
-            REM Copy current running files to backup folder
-            if exist "C:\inetpub\AzureTestApi" (
-              xcopy "C:\inetpub\AzureTestApi\*" "%BACKUP_DIR%\" /E /I /H /Y
-              echo Backup created at %BACKUP_DIR%
-            ) else (
-              echo No existing deployment found - skipping backup
-            )
+            cmd /c "if not exist C:\inetpub\backups mkdir C:\inetpub\backups"
+            cmd /c "for /f \"tokens=1-6 delims=:-. \" %%a in (\"%DATE% %TIME%\") do if exist C:\inetpub\AzureTestApi (xcopy \"C:\inetpub\AzureTestApi\*\" \"C:\inetpub\backups\%%c-%%b-%%a_%%d-%%e-%%f\ \" /E /I /H /Y)"
 
       # Step 3 — Stop IIS site before replacing files
-      # Prevents "file in use" errors during file copy
       - name: Stop IIS site
         uses: appleboy/ssh-action@v0.1.5
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USERNAME }}
           password: ${{ secrets.VM_PASSWORD }}
-          protocol: cmd
           script: |
-            REM Stop only our site, not all of IIS
-            %windir%\system32\inetsrv\appcmd stop site /site.name:"AzureTestApi"
-            echo IIS site stopped
+            cmd /c "%windir%\system32\inetsrv\appcmd stop site /site.name:\"AzureTestApi\""
 
       # Step 4 — Copy new files to IIS folder
       - name: Deploy new version
@@ -125,7 +105,7 @@ jobs:
           password: ${{ secrets.VM_PASSWORD }}
           source: "./publish/*"
           target: "C:/inetpub/AzureTestApi"
-          overwrite: true         # Replace existing files
+          overwrite: true         
 
       # Step 5 — Start IIS site with new files
       - name: Start IIS site
@@ -134,25 +114,15 @@ jobs:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USERNAME }}
           password: ${{ secrets.VM_PASSWORD }}
-          protocol: cmd
           script: |
-            REM Start the site with new deployment
-            %windir%\system32\inetsrv\appcmd start site /site.name:"AzureTestApi"
-            echo IIS site started
+            cmd /c "%windir%\system32\inetsrv\appcmd start site /site.name:\"AzureTestApi\""
 
       # Step 6 — Verify deployment by hitting health check endpoint
-      # If this fails, you know something went wrong
       - name: Verify deployment
         uses: appleboy/ssh-action@v0.1.5
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USERNAME }}
           password: ${{ secrets.VM_PASSWORD }}
-          protocol: cmd
           script: |
-            REM Wait 10 seconds for app to fully start
-            timeout /t 10 /nobreak
-
-            REM Hit health check endpoint
-            curl http://localhost:8080/health
-            echo Deployment verification complete
+            cmd /c "timeout /t 10 /nobreak && curl http://localhost:8080/health"
