@@ -1,128 +1,133 @@
-# ============================================
-# IIS Deployment Pipeline
-# Triggers on push to iis-deploy branch only
-# Includes backup of current running version
-# ============================================
-
 name: Build and deploy ASP.Net Core app to IIS on Azure VM
 
-# ── TRIGGER ──────────────────────────────────
 on:
   push:
     branches:
-      - iis-deploy      # Only triggers on iis-deploy branch
-                        # master branch stays for App Service pipeline
-  workflow_dispatch:    # Manual trigger button on GitHub Actions tab
+      - iis-deploy
+  workflow_dispatch:
 
-# ── JOBS ─────────────────────────────────────
 jobs:
 
   # ════════════════════════════════════════════
-  # JOB 1 — BUILD
-  # Compiles and packages your .NET 8 API
+  # JOB 1 — BUILD (identical to App Service pipeline)
   # ════════════════════════════════════════════
   build:
-    runs-on: windows-latest   # Fresh Windows machine on GitHub's servers
-
+    runs-on: windows-latest
     permissions:
-      contents: read          # Only needs to read your code
+      contents: read
 
     steps:
-
-      # Step 1 — Download your code onto the machine
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2 — Install .NET 8 SDK
       - name: Set up .NET 8
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.x'
 
-      # Step 3 — Compile in Release mode
-      # If compile errors exist — pipeline stops here, nothing deploys
       - name: Build
         run: dotnet build --configuration Release
 
-      # Step 4 — Package app with all dependencies into one folder
-      # This is what actually gets deployed to IIS
       - name: Publish
         run: dotnet publish -c Release -o ./publish
 
-      # Step 5 — Upload packaged app to GitHub's temporary storage
-      # Deploy job (different machine) will download it from here
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: iis-app           # Name of the package
-          path: ./publish         # Folder to upload
+          name: iis-app
+          path: ./publish
 
-# ════════════════════════════════════════════
+  # ════════════════════════════════════════════
   # JOB 2 — DEPLOY
-  # Backs up current version, then deploys new version
-  # Only runs if build job succeeded
+  # Uses PowerShell remoting (works on windows-latest)
   # ════════════════════════════════════════════
   deploy:
-    runs-on: ubuntu-latest        # Linux middleman runner
-    needs: build                  
+    runs-on: windows-latest
+    needs: build
 
     steps:
 
-      # Step 1 — Download the package built in Job 1
+      # Step 1 — Download artifact from build job
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: iis-app
           path: ./publish
 
-      # Step 2 — Connect to VM and take backup of current version
-      - name: Backup current deployment
-        uses: appleboy/ssh-action@v0.1.5
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USERNAME }}
-          password: ${{ secrets.VM_PASSWORD }}
-          script: |
-            cmd /c "if not exist C:\inetpub\backups mkdir C:\inetpub\backups"
-            cmd /c "for /f \"tokens=1-6 delims=:-. \" %%a in (\"%DATE% %TIME%\") do if exist C:\inetpub\AzureTestApi (xcopy \"C:\inetpub\AzureTestApi\*\" \"C:\inetpub\backups\%%c-%%b-%%a_%%d-%%e-%%f\ \" /E /I /H /Y)"
+      # Step 2 — Backup + Stop + Deploy + Start via PowerShell remoting
+      - name: Deploy to IIS on VM
+        shell: powershell
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USERNAME: ${{ secrets.VM_USERNAME }}
+          VM_PASSWORD: ${{ secrets.VM_PASSWORD }}
+        run: |
+          # ── Setup secure password and credentials ──
+          $password = ConvertTo-SecureString $env:VM_PASSWORD -AsPlainText -Force
+          $credential = New-Object System.Management.Automation.PSCredential($env:VM_USERNAME, $password)
 
-      # Step 3 — Stop IIS site before replacing files
-      - name: Stop IIS site
-        uses: appleboy/ssh-action@v0.1.5
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USERNAME }}
-          password: ${{ secrets.VM_PASSWORD }}
-          script: |
-            cmd /c "%windir%\system32\inetsrv\appcmd stop site /site.name:\"AzureTestApi\""
+          # ── Create PS Session to VM ──
+          $sessionOption = New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck
+          $session = New-PSSession -ComputerName $env:VM_HOST `
+                                   -Credential $credential `
+                                   -UseSSL:$false `
+                                   -SessionOption $sessionOption `
+                                   -Authentication Basic
 
-      # Step 4 — Copy new files to IIS folder
-      - name: Deploy new version
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USERNAME }}
-          password: ${{ secrets.VM_PASSWORD }}
-          source: "./publish/*"
-          target: "C:/inetpub/AzureTestApi"
-          overwrite: true         
+          # ── Step A: Backup current deployment ──
+          Invoke-Command -Session $session -ScriptBlock {
+            $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+            $backupPath = "C:\inetpub\backups\$timestamp"
 
-      # Step 5 — Start IIS site with new files
-      - name: Start IIS site
-        uses: appleboy/ssh-action@v0.1.5
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USERNAME }}
-          password: ${{ secrets.VM_PASSWORD }}
-          script: |
-            cmd /c "%windir%\system32\inetsrv\appcmd start site /site.name:\"AzureTestApi\""
+            # Create backups folder if not exists
+            if (-not (Test-Path "C:\inetpub\backups")) {
+              New-Item -ItemType Directory -Path "C:\inetpub\backups"
+              Write-Host "Created backups folder"
+            }
 
-      # Step 6 — Verify deployment by hitting health check endpoint
-      - name: Verify deployment
-        uses: appleboy/ssh-action@v0.1.5
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USERNAME }}
-          password: ${{ secrets.VM_PASSWORD }}
-          script: |
-            cmd /c "timeout /t 10 /nobreak && curl http://localhost:8080/health"
+            # Copy current deployment to backup
+            if (Test-Path "C:\inetpub\AzureTestApi") {
+              Copy-Item -Path "C:\inetpub\AzureTestApi" `
+                        -Destination $backupPath `
+                        -Recurse -Force
+              Write-Host "Backup created at: $backupPath"
+            } else {
+              Write-Host "No existing deployment - skipping backup"
+            }
+          }
+
+          # ── Step B: Stop IIS site ──
+          Invoke-Command -Session $session -ScriptBlock {
+            & "$env:windir\system32\inetsrv\appcmd" stop site /site.name:"AzureTestApi"
+            Write-Host "IIS site stopped"
+          }
+
+          # ── Step C: Copy new files to VM ──
+          Write-Host "Copying new files to VM..."
+          Copy-Item -Path "./publish/*" `
+                    -Destination "C:\inetpub\AzureTestApi" `
+                    -ToSession $session `
+                    -Recurse -Force
+          Write-Host "Files copied successfully"
+
+          # ── Step D: Start IIS site ──
+          Invoke-Command -Session $session -ScriptBlock {
+            & "$env:windir\system32\inetsrv\appcmd" start site /site.name:"AzureTestApi"
+            Write-Host "IIS site started"
+          }
+
+          # ── Step E: Verify deployment ──
+          Invoke-Command -Session $session -ScriptBlock {
+            Start-Sleep -Seconds 10
+            try {
+              $response = Invoke-WebRequest -Uri "http://localhost:8080/health" -UseBasicParsing
+              Write-Host "Health check passed: $($response.StatusCode)"
+            } catch {
+              Write-Host "Health check failed: $_"
+              exit 1
+            }
+          }
+
+          # ── Cleanup session ──
+          Remove-PSSession $session
+          Write-Host "Deployment complete!"
