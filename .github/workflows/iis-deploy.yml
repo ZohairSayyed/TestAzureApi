@@ -63,7 +63,7 @@ jobs:
   # Only runs if build job succeeded
   # ════════════════════════════════════════════
   deploy:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     needs: build                  # Wait for build to succeed first
 
     steps:
