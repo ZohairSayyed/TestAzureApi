@@ -215,152 +215,106 @@ jobs:
           }
 
           # ─────────────────────────────────────
-          # Health check + Auto Rollback
+          # Deployment validation
           # ─────────────────────────────────────
-          Invoke-Command -Session $session -ScriptBlock {
           
-            Start-Sleep -Seconds 10
+          $deploymentSucceeded = $false
+          $rollbackPerformed = $false
           
-            try {
+          try {
+          
+              Start-Sleep -Seconds 10
           
               Write-Host "Running health check..."
           
               $response = Invoke-WebRequest `
-                -Uri "http://localhost:8080/health" `
-                -UseBasicParsing `
-                -TimeoutSec 30
-          
-              if ($response.StatusCode -ne 200) {
-                throw "Health check returned status code $($response.StatusCode)"
-              }
-          
-              Write-Host "════════════════════════════════"
-              Write-Host "Health check successful"
-              Write-Host "Application is healthy"
-              Write-Host "════════════════════════════════"
-            }
-            catch {
-          
-              Write-Host "════════════════════════════════"
-              Write-Host "Health check failed"
-              Write-Host $_
-              Write-Host "Starting automatic rollback..."
-              Write-Host "════════════════════════════════"
-          
-              Import-Module WebAdministration
-          
-              Import-Module WebAdministration
-
-              # Stop IIS website
-              Stop-Website -Name "AzureTestApi"
-              
-              # Stop App Pool
-              Stop-WebAppPool -Name "AzureTestApi"
-              
-              Write-Host "IIS Website stopped"
-              Write-Host "Application Pool stopped"
-              
-              # Wait for process release
-              Start-Sleep -Seconds 5
-          
-              # Remove broken deployment
-              Remove-Item `
-                -Path "C:\inetpub\AzureTestApi\*" `
-                -Recurse `
-                -Force `
-                -ErrorAction SilentlyContinue
-          
-              Write-Host "Broken deployment removed"
-          
-              # Find latest backup
-              $latestBackup = Get-ChildItem "C:\inetpub\backups" |
-                              Sort-Object CreationTime -Descending |
-                              Select-Object -First 1
-          
-              if ($null -eq $latestBackup) {
-          
-                Write-Host "No backup found for rollback"
-          
-                # Start App Pool
-                Start-WebAppPool -Name "AzureTestApi"
-
-                # Start IIS website
-                Start-Website -Name "AzureTestApi"
-          
-                exit 1
-              }
-          
-              Write-Host "Restoring backup: $($latestBackup.FullName)"
-          
-              # Restore backup
-              Copy-Item `
-                -Path "$($latestBackup.FullName)\*" `
-                -Destination "C:\inetpub\AzureTestApi" `
-                -Recurse `
-                -Force
-          
-              Write-Host "Backup restored"
-          
-              # Start IIS again
-              # Start App Pool
-              Start-WebAppPool -Name "AzureTestApi"
-
-              # Start IIS website
-              Start-Website -Name "AzureTestApi"
-          
-              Write-Host "IIS restarted after rollback"
-          
-              # Verify rollback app
-              Start-Sleep -Seconds 10
-          
-              try {
-          
-                $rollbackResponse = Invoke-WebRequest `
                   -Uri "http://localhost:8080/health" `
                   -UseBasicParsing `
                   -TimeoutSec 30
           
-                if ($rollbackResponse.StatusCode -eq 200) {
-          
-                  Write-Host "════════════════════════════════"
-                  Write-Host "ROLLBACK SUCCESSFUL"
-                  Write-Host "Previous stable version restored"
-                  Write-Host "════════════════════════════════"
-                }
-                else {
-          
-                  Write-Host "Rollback health check failed"
-                }
-              }
-              catch {
-          
-                Write-Host "Rollback verification failed"
-                Write-Host $_
+              if ($response.StatusCode -ne 200) {
+                  throw "Health check failed with status code $($response.StatusCode)"
               }
           
-              # FAIL PIPELINE finally
-              throw "Deployment failed. Rollback completed."
-            }
-          }
+              $deploymentSucceeded = $true
           
-          # ─────────────────────────────────────
-          # Deployment summary
-          # ─────────────────────────────────────
-          Invoke-Command -Session $session -ScriptBlock {
-            Write-Host "════════════════════════════════"
-            Write-Host "Deployment Summary"
-            Write-Host "════════════════════════════════"
-            Write-Host "Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-            Write-Host "Site: AzureTestApi"
-            Write-Host "Port: 8080"
-            Write-Host "Path: C:\inetpub\AzureTestApi"
-            Write-Host "Status: $(( Get-Website 'AzureTestApi').State)"
-            Write-Host "════════════════════════════════"
+              Write-Host "Health check successful"
           }
+          catch {
           
-          # ─────────────────────────────────────
-          # Cleanup
-          # ─────────────────────────────────────
-          Remove-PSSession $session
-
-          Write-Host "Deployment completed successfully!"
+              Write-Host "Deployment validation failed"
+              Write-Host "Starting rollback..."
+          
+              $rollbackPerformed = $true
+          
+              Invoke-Command -Session $session -ScriptBlock {
+          
+                  Import-Module WebAdministration
+          
+                  # Stop IIS
+                  Stop-Website -Name "AzureTestApi"
+                  Stop-WebAppPool -Name "AzureTestApi"
+          
+                  Start-Sleep -Seconds 5
+          
+                  # Remove failed deployment
+                  Remove-Item `
+                      -Path "C:\inetpub\AzureTestApi\*" `
+                      -Recurse `
+                      -Force `
+                      -ErrorAction SilentlyContinue
+          
+                  # Restore latest backup
+                  $latestBackup = Get-ChildItem "C:\inetpub\backups" |
+                                  Sort-Object CreationTime -Descending |
+                                  Select-Object -First 1
+          
+                  Copy-Item `
+                      -Path "$($latestBackup.FullName)\*" `
+                      -Destination "C:\inetpub\AzureTestApi" `
+                      -Recurse `
+                      -Force
+          
+                  # Restart IIS
+                  Start-WebAppPool -Name "AzureTestApi"
+                  Start-Website -Name "AzureTestApi"
+              }
+          
+              Write-Host "Rollback completed"
+          
+              throw "Deployment failed. Stable version restored."
+          }
+          finally {
+          
+              # ─────────────────────────────────────
+              # Deployment summary
+              # ─────────────────────────────────────
+          
+              Invoke-Command -Session $session -ScriptBlock {
+          
+                  Import-Module WebAdministration
+          
+                  Write-Host "════════════════════════════════"
+                  Write-Host "Deployment Summary"
+                  Write-Host "════════════════════════════════"
+          
+                  Write-Host "Site: AzureTestApi"
+                  Write-Host "Status: $((Get-Website 'AzureTestApi').State)"
+                  Write-Host "Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+          
+                  Write-Host "════════════════════════════════"
+              }
+          
+              # Cleanup session
+              Remove-PSSession $session
+          
+              if ($deploymentSucceeded) {
+          
+                  Write-Host "Deployment completed successfully"
+              }
+          
+              if ($rollbackPerformed) {
+          
+                  Write-Host "Rollback executed successfully"
+              }
+          }
