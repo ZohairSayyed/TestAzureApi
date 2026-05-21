@@ -222,25 +222,30 @@ jobs:
           $rollbackPerformed = $false
           
           try {
-          
-              Start-Sleep -Seconds 10
-          
               Write-Host "Running health check..."
           
-              $response = Invoke-Command -Session $session -ScriptBlock {
-                  Invoke-WebRequest `
-                      -Uri "http://localhost:8080/health" `
-                      -UseBasicParsing `
-                      -TimeoutSec 30
-}
+              $healthResult = Invoke-Command -Session $session -ScriptBlock {
+                  Start-Sleep -Seconds 10    # ← wait on VM
+                  
+                  try {
+                      $response = Invoke-WebRequest `
+                          -Uri "http://localhost:8080/health" `
+                          -UseBasicParsing `
+                          -TimeoutSec 30
           
-              if ($response.StatusCode -ne 200) {
-                  throw "Health check failed with status code $($response.StatusCode)"
+                      return $response.StatusCode
+                  }
+                  catch {
+                      return 500
+                  }
+              }
+          
+              if ($healthResult -ne 200) {
+                  throw "Health check failed with status: $healthResult"
               }
           
               $deploymentSucceeded = $true
-          
-              Write-Host "Health check successful"
+              Write-Host "Health check successful — Status: $healthResult"
           }
           catch {
           
