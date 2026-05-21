@@ -142,6 +142,24 @@ jobs:
               Write-Host "Backup created: $backupPath"
             }
           }
+          
+          # ─────────────────────────────────────
+          # Cleanup old backups (keep last 5 only)
+          # ─────────────────────────────────────
+          Invoke-Command -Session $session -ScriptBlock {
+
+            $backupRoot = "C:\inetpub\backups"
+            $allBackups = Get-ChildItem $backupRoot | 
+                        Sort-Object CreationTime -Descending
+
+            # Keep latest 5, delete the rest
+            if ($allBackups.Count -gt 5) {
+              $allBackups | Select-Object -Skip 5 | ForEach-Object {
+                Remove-Item $_.FullName -Recurse -Force
+                Write-Host "Deleted old backup: $($_.Name)"
+              }
+            }
+          }
 
           # ─────────────────────────────────────
           # Stop IIS website
@@ -220,7 +238,22 @@ jobs:
               exit 1
             }
           }
-
+          
+          # ─────────────────────────────────────
+          # Deployment summary
+          # ─────────────────────────────────────
+          Invoke-Command -Session $session -ScriptBlock {
+            Write-Host "════════════════════════════════"
+            Write-Host "Deployment Summary"
+            Write-Host "════════════════════════════════"
+            Write-Host "Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+            Write-Host "Site: AzureTestApi"
+            Write-Host "Port: 8080"
+            Write-Host "Path: C:\inetpub\AzureTestApi"
+            Write-Host "Status: $(( Get-Website 'AzureTestApi').State)"
+            Write-Host "════════════════════════════════"
+          }
+          
           # ─────────────────────────────────────
           # Cleanup
           # ─────────────────────────────────────
