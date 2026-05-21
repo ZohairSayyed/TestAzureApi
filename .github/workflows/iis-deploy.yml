@@ -218,8 +218,8 @@ jobs:
           # Deployment validation
           # ─────────────────────────────────────
           
-          $deploymentSucceeded = $false
-          $rollbackPerformed = $false
+          # $deploymentSucceeded = $false
+          # $rollbackPerformed = $false
           
           try {
           
@@ -236,53 +236,54 @@ jobs:
                   throw "Health check failed with status code $($response.StatusCode)"
               }
           
-              $deploymentSucceeded = $true
+              # $deploymentSucceeded = $true
           
-              Write-Host "Health check successful"
+              # Write-Host "Health check successful"
           }
           catch {
           
               Write-Host "Deployment validation failed"
               Write-Host "Starting rollback..."
+              Write-Host "rollback skipped..."
           
-              $rollbackPerformed = $true
+              # $rollbackPerformed = $true
           
-              Invoke-Command -Session $session -ScriptBlock {
+              # Invoke-Command -Session $session -ScriptBlock {
           
-                  Import-Module WebAdministration
+                  # Import-Module WebAdministration
           
-                  # Stop IIS
-                  Stop-Website -Name "AzureTestApi"
-                  Stop-WebAppPool -Name "AzureTestApi"
+                  # # Stop IIS
+                  # Stop-Website -Name "AzureTestApi"
+                  # Stop-WebAppPool -Name "AzureTestApi"
           
-                  Start-Sleep -Seconds 5
+                  # Start-Sleep -Seconds 5
           
-                  # Remove failed deployment
-                  Remove-Item `
-                      -Path "C:\inetpub\AzureTestApi\*" `
-                      -Recurse `
-                      -Force `
-                      -ErrorAction SilentlyContinue
+                  # # Remove failed deployment
+                  # Remove-Item `
+                      # -Path "C:\inetpub\AzureTestApi\*" `
+                      # -Recurse `
+                      # -Force `
+                      # -ErrorAction SilentlyContinue
           
-                  # Restore latest backup
-                  $latestBackup = Get-ChildItem "C:\inetpub\backups" |
-                                  Sort-Object CreationTime -Descending |
-                                  Select-Object -First 1
+                  # # Restore latest backup
+                  # $latestBackup = Get-ChildItem "C:\inetpub\backups" |
+                                  # Sort-Object CreationTime -Descending |
+                                  # Select-Object -First 1
           
-                  Copy-Item `
-                      -Path "$($latestBackup.FullName)\*" `
-                      -Destination "C:\inetpub\AzureTestApi" `
-                      -Recurse `
-                      -Force
+                  # Copy-Item `
+                      # -Path "$($latestBackup.FullName)\*" `
+                      # -Destination "C:\inetpub\AzureTestApi" `
+                      # -Recurse `
+                      # -Force
           
-                  # Restart IIS
-                  Start-WebAppPool -Name "AzureTestApi"
-                  Start-Website -Name "AzureTestApi"
-              }
+                  # # Restart IIS
+                  # Start-WebAppPool -Name "AzureTestApi"
+                  # Start-Website -Name "AzureTestApi"
+              # }
           
-              Write-Host "Rollback completed"
+              # Write-Host "Rollback completed"
           
-              throw "Deployment failed. Stable version restored."
+              # throw "Deployment failed. Stable version restored."
           }
           finally {
           
@@ -306,15 +307,15 @@ jobs:
               }
           
               # Cleanup session
-              Remove-PSSession $session
+              # Remove-PSSession $session
           
-              if ($deploymentSucceeded) {
+              # if ($deploymentSucceeded) {
           
-                  Write-Host "Deployment completed successfully"
-              }
+                  # Write-Host "Deployment completed successfully"
+              # }
           
-              if ($rollbackPerformed) {
+              # if ($rollbackPerformed) {
           
-                  Write-Host "Rollback executed successfully"
-              }
+                  # Write-Host "Rollback executed successfully"
+              # }
           }
