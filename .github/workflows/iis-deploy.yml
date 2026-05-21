@@ -249,10 +249,19 @@ jobs:
           
               Import-Module WebAdministration
           
+              Import-Module WebAdministration
+
               # Stop IIS website
               Stop-Website -Name "AzureTestApi"
-          
-              Write-Host "IIS stopped"
+              
+              # Stop App Pool
+              Stop-WebAppPool -Name "AzureTestApi"
+              
+              Write-Host "IIS Website stopped"
+              Write-Host "Application Pool stopped"
+              
+              # Wait for process release
+              Start-Sleep -Seconds 5
           
               # Remove broken deployment
               Remove-Item `
@@ -272,6 +281,10 @@ jobs:
           
                 Write-Host "No backup found for rollback"
           
+                # Start App Pool
+                Start-WebAppPool -Name "AzureTestApi"
+
+                # Start IIS website
                 Start-Website -Name "AzureTestApi"
           
                 exit 1
@@ -289,6 +302,10 @@ jobs:
               Write-Host "Backup restored"
           
               # Start IIS again
+              # Start App Pool
+              Start-WebAppPool -Name "AzureTestApi"
+
+              # Start IIS website
               Start-Website -Name "AzureTestApi"
           
               Write-Host "IIS restarted after rollback"
