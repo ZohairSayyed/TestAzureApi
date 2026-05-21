@@ -11,13 +11,14 @@ namespace TestAzureApi
 
             if (!builder.Environment.IsDevelopment())
             {
-                var keyVaultUrl = "https://kv-testazureapi-dev.vault.azure.net/";
+                var keyVaultUrl = "https://kv-testazureapi-dev.vault.azure.net/"; //KV URL
 
                 builder.Configuration.AddAzureKeyVault(
                     new Uri(keyVaultUrl!),
                     new DefaultAzureCredential()
                 );
             }
+
             // Add services to the container.
 
             builder.Services.AddControllers();
