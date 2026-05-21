@@ -218,7 +218,7 @@ jobs:
           # Deployment validation
           # ─────────────────────────────────────
 
-          # ✅ Variables must NOT be commented out
+          # Variables must NOT be commented out
           $deploymentSucceeded = $false
           $rollbackPerformed = $false
 
@@ -226,7 +226,7 @@ jobs:
 
               Write-Host "Running health check..."
 
-              # ✅ Health check runs on VM
+              # Health check runs on VM
               $healthResult = Invoke-Command -Session $session -ScriptBlock {
 
                   Start-Sleep -Seconds 10
@@ -253,12 +253,13 @@ jobs:
           }
           catch {
 
-              Write-Host "Deployment validation failed: $_"
+              $errorMsg = $_.ToString()
+              Write-Host "Deployment validation failed: $errorMsg"
               Write-Host "Starting rollback..."
 
               $rollbackPerformed = $true
 
-              # ✅ Check session is still open before rollback
+              # Check session is still open before rollback
               if ($session.State -eq "Opened") {
 
                   Invoke-Command -Session $session -ScriptBlock {
@@ -312,7 +313,7 @@ jobs:
               # Deployment summary
               # ─────────────────────────────────────
 
-              # ✅ Check session before using it in finally
+              # Check session before using it in finally
               if ($session -and $session.State -eq "Opened") {
 
                   Invoke-Command -Session $session -ScriptBlock {
@@ -332,13 +333,13 @@ jobs:
                   Remove-PSSession $session
               }
 
-              # ✅ Summary on GitHub Actions log
+              # Summary on GitHub Actions log
               if ($deploymentSucceeded) {
-                  Write-Host "✅ Deployment completed successfully"
+                  Write-Host "Deployment completed successfully"
               }
 
               if ($rollbackPerformed) {
-                  Write-Host "⚠️ Rollback executed — stable version restored"
+                  Write-Host "Rollback executed — stable version restored"
                   exit 1
               }
           }
