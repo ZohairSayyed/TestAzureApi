@@ -1,7 +1,7 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 
-name: Build and deploy ASP.Net Core app to Azure Web App - TestAzureApi-dev-Zohair
+name: Build and deploy ASP.Net Core app to Azure Web App - TestAzureApi-prod-Zohair
 
 on:
   push:
@@ -51,15 +51,15 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_EE2ABD7CC711471CB826D27FB97B554E }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_146200B160004EE29B90CB0EA795BC0E }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_AF88AAD3148B4C6E9ABBA374CF8EB293 }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_62FEF47F8DBC4D99AD4C2D84083E2E8E }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_67A25D5F648B444EAFA888DCAF9F3C51 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_7486B3BED5B04B5DA98AD362CB0E8182 }}
 
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'TestAzureApi-dev-Zohair'
+          app-name: 'TestAzureApi-prod-Zohair'
           slot-name: 'Production'
           package: .
           
