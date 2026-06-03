@@ -61,6 +61,61 @@ jobs:
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'TestAzureApi-prod-Zohair'
-          slot-name: 'Production'
+          slot-name: 'staging'
           package: .
       
+       #Health check on staging slot before swap
+      - name: Health check on staging slot
+        run: |
+          Start-Sleep -Seconds 30
+          $response = Invoke-WebRequest `
+            -Uri "https://testazureapi-prod-zohair-staging.azurewebsites.net/health" `
+            -UseBasicParsing `
+            -TimeoutSec 30
+          if ($response.StatusCode -ne 200) {
+            Write-Error "Health check failed on staging slot"
+            exit 1
+          }
+          Write-Host "Health check passed on staging slot"
+        shell: powershell
+
+  swap-to-production:
+    runs-on: windows-latest
+    needs: deploy-to-staging-slot
+    environment: production    #manual approval gate
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_PROD }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_PROD }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_PROD }}
+
+      #Swap staging slot to production
+      - name: Swap staging to production
+        uses: azure/CLI@v1
+        with:
+          inlineScript: |
+            az webapp deployment slot swap \
+              --resource-group rg-TestAzureApi-prod \
+              --name TestAzureApi-prod-Zohair \
+              --slot staging \
+              --target-slot production
+          
+      - name: Verify production after swap
+        run: |
+          Start-Sleep -Seconds 15
+          $response = Invoke-WebRequest `
+            -Uri "https://testazureapi-prod-zohair.azurewebsites.net/health" `
+            -UseBasicParsing `
+            -TimeoutSec 30
+          if ($response.StatusCode -ne 200) {
+            Write-Error "Health check failed on production after swap"
+            exit 1
+          }
+          Write-Host "Production health check passed after swap"
+        shell: powershell
