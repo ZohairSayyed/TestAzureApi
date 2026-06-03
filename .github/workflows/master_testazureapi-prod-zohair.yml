@@ -38,7 +38,8 @@ jobs:
           name: .net-app
           path: ${{ env.DOTNET_ROOT }}/myapp
 
-  deploy-to-staging-slot:
+  deploy_to_staging_slot:
+    name: Deploy to staging slot
     runs-on: windows-latest
     needs: build
     permissions:
@@ -82,9 +83,10 @@ jobs:
           Write-Host "Health check passed on staging slot"
         shell: powershell
 
-  swap-to-production:
+  swap_to_production:
+    name: Swap to production
     runs-on: windows-latest
-    needs: deploy-to-staging-slot
+    needs: deploy_to_staging_slot
     environment: production # Manual approval gate
     permissions:
       id-token: write # This is required for requesting the JWT
