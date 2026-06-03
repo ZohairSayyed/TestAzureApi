@@ -29,7 +29,8 @@ namespace TestAzureApi.Controllers
                 Name = _configuration["UserSettings:Name"],
                 Age = _configuration["UserSettings:Age"],
                 Email = _configuration["UserSettings:Email"],
-                City = _configuration["UserSettings:City"]
+                City = _configuration["UserSettings:City"],
+                Gender = _configuration["UserSettings:Gender"]
             };
 
             return user;

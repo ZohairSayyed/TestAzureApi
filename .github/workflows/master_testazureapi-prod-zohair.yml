@@ -54,7 +54,8 @@ jobs:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_62FEF47F8DBC4D99AD4C2D84083E2E8E }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_67A25D5F648B444EAFA888DCAF9F3C51 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_7486B3BED5B04B5DA98AD362CB0E8182 }}
-
+        
+      #Deploy to staging slot — NOT production
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
@@ -62,4 +63,4 @@ jobs:
           app-name: 'TestAzureApi-prod-Zohair'
           slot-name: 'Production'
           package: .
-          
+      
