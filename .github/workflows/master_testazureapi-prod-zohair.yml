@@ -55,7 +55,7 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_67A25D5F648B444EAFA888DCAF9F3C51 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_7486B3BED5B04B5DA98AD362CB0E8182 }}
         
-      #Deploy to staging slot — NOT production
+      #Deploy to staging slot â€” NOT production
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
