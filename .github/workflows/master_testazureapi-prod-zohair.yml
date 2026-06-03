@@ -35,12 +35,15 @@ jobs:
           name: .net-app
           path: ${{env.DOTNET_ROOT}}/myapp
 
-  deploy:
+
+  deploy_and_swap_to_production:
+    name: Deploy staging slot and swap to production
     runs-on: windows-latest
     needs: build
+    environment: production # Manual approval gate
     permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+      id-token: write # This is required for requesting the JWT
+      contents: read
 
     steps:
       - name: Download artifact from build job
@@ -55,7 +58,7 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_67A25D5F648B444EAFA888DCAF9F3C51 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_7486B3BED5B04B5DA98AD362CB0E8182 }}
         
-      #Deploy to staging slot — NOT production
+      #Deploy to staging slot â€” NOT production
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
@@ -79,23 +82,7 @@ jobs:
           Write-Host "Health check passed on staging slot"
         shell: powershell
 
-  swap-to-production:
-    runs-on: windows-latest
-    needs: deploy-to-staging-slot
-    environment: production    #manual approval gate
-    permissions:
-      id-token: write
-      contents: read
-
-    steps:
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_PROD }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_PROD }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_PROD }}
-
-      #Swap staging slot to production
+      # Swap staging slot to production.
       - name: Swap staging to production
         uses: azure/CLI@v1
         with:
