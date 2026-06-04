@@ -35,7 +35,7 @@ jobs:
           name: .net-app
           path: ${{env.DOTNET_ROOT}}/myapp
 
-  deploy:
+  deploy-staging:
     runs-on: windows-latest
     needs: build
     permissions:
@@ -47,7 +47,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: .net-app
-      
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -55,11 +55,74 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_67A25D5F648B444EAFA888DCAF9F3C51 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_7486B3BED5B04B5DA98AD362CB0E8182 }}
 
-      - name: Deploy to Azure Web App
-        id: deploy-to-webapp
+      - name: Deploy to staging slot
+        id: deploy-to-staging-slot
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'TestAzureApi-prod-Zohair'
-          slot-name: 'Production'
+          slot-name: 'staging'
           package: .
-          
+
+      - name: Health check staging slot
+        shell: pwsh
+        run: |
+          $healthUrl = 'https://TestAzureApi-prod-Zohair-staging.azurewebsites.net/health'
+          $maxAttempts = 12
+          $delaySeconds = 10
+
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            try {
+              $response = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 30
+              if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
+                Write-Host "Staging health check succeeded with HTTP status $($response.StatusCode)."
+                exit 0
+              }
+
+              Write-Warning "Health check attempt $attempt returned HTTP status $($response.StatusCode)."
+            }
+            catch {
+              Write-Warning "Health check attempt $attempt failed: $($_.Exception.Message)"
+            }
+
+            if ($attempt -lt $maxAttempts) {
+              Start-Sleep -Seconds $delaySeconds
+            }
+          }
+
+          throw "Staging health check failed after $maxAttempts attempts."
+
+  swap-staging-to-production:
+    runs-on: windows-latest
+    needs: deploy-staging
+    environment:
+      name: Production
+    permissions:
+      id-token: write #This is required for requesting the JWT
+      contents: read #This is required for actions/checkout
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_62FEF47F8DBC4D99AD4C2D84083E2E8E }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_67A25D5F648B444EAFA888DCAF9F3C51 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_7486B3BED5B04B5DA98AD362CB0E8182 }}
+
+      - name: Swap staging slot to production
+        shell: pwsh
+        run: |
+          $appName = 'TestAzureApi-prod-Zohair'
+          $sourceSlot = 'staging'
+          $targetSlot = 'production'
+
+          $resourceGroup = az webapp list --query "[?name=='$appName'].resourceGroup | [0]" -o tsv
+
+          if ([string]::IsNullOrWhiteSpace($resourceGroup)) {
+            throw "Unable to find resource group for Azure Web App $appName."
+          }
+
+          az webapp deployment slot swap `
+            --name $appName `
+            --resource-group $resourceGroup `
+            --slot $sourceSlot `
+            --target-slot $targetSlot
